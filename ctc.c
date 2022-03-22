@@ -2,6 +2,7 @@
 #include <windows.h>
 
 typedef __int64 s64;
+#define Minimum(a,b) ((a) < (b) ? (a) : (b))
 
 #pragma function(memcpy)
 void *memcpy(void *dest_init, void *src_init, size_t n) {
@@ -37,33 +38,33 @@ int mainCRTStartup(void) {
     GetSystemInfo(&si);
     DWORD page_size = si.dwPageSize;
     
-    s64 n = 0;
+    s64 size_used = 0;
     char *buffer = VirtualAlloc(0, 1ULL<<35, MEM_RESERVE, PAGE_READWRITE);
     
-    s64 size = page_size;
+    s64 size_committed = page_size;
     
-    VirtualAlloc(buffer, size, MEM_COMMIT, PAGE_READWRITE);
+    VirtualAlloc(buffer, size_committed, MEM_COMMIT, PAGE_READWRITE);
     
     HANDLE stdin_handle = GetStdHandle(STD_INPUT_HANDLE);
     
     DWORD bytes_read;
+    DWORD bytes_to_read;
     BOOL rc;
     do {
-        DWORD bytes_to_read = size - n;
-        rc = ReadFile(stdin_handle, buffer + n, bytes_to_read, &bytes_read, 0);
-        if (bytes_read == bytes_to_read) {
-            n = size;
-            size *= 2;
-            VirtualAlloc(buffer + n, size, MEM_COMMIT, PAGE_READWRITE);
-        } else {
-            n += bytes_read;
-            buffer[n++] = 0;
+        bytes_to_read = Minimum(size_committed - size_used, 0xffffffff);
+        rc = ReadFile(stdin_handle, buffer + size_used, bytes_to_read, &bytes_read, 0);
+        size_used += bytes_read;
+        if (size_committed == size_used) {
+            size_committed *= 2;
+            VirtualAlloc(buffer, size_committed, MEM_COMMIT, PAGE_READWRITE);
         }
-    } while (rc == TRUE && bytes_read == page_size);
+    } while (rc == TRUE && bytes_read == bytes_to_read);
     
-    char *clipboard_buffer = GlobalAlloc(GPTR, n);
+    buffer[size_used++]=0;
+    
+    char *clipboard_buffer = GlobalAlloc(GPTR, size_used);
     if (clipboard_buffer) {
-        memcpy(clipboard_buffer, buffer, n);
+        memcpy(clipboard_buffer, buffer, size_used);
         
         OpenClipboard(0);
         EmptyClipboard();
